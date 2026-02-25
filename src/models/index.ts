@@ -28,14 +28,14 @@ interface ContactAttributes {
 interface ContactCreationAttributes extends Optional<ContactAttributes, 'id' | 'linkedId' | 'deletedAt' | 'createdAt' | 'updatedAt'> { }
 
 export class Contact extends Model<ContactAttributes, ContactCreationAttributes> implements ContactAttributes {
-    public id!: number;
-    public phoneNumber!: string | null;
-    public email!: string | null;
-    public linkedId!: number | null;
-    public linkPrecedence!: 'primary' | 'secondary';
-    public readonly createdAt!: Date;
-    public readonly updatedAt!: Date;
-    public deletedAt!: Date | null;
+    declare id: number;
+    declare phoneNumber: string | null;
+    declare email: string | null;
+    declare linkedId: number | null;
+    declare linkPrecedence: 'primary' | 'secondary';
+    declare readonly createdAt: Date;
+    declare readonly updatedAt: Date;
+    declare deletedAt: Date | null;
 }
 
 Contact.init(
