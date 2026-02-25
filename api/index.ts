@@ -14,18 +14,25 @@ app.get('/', (req, res) => {
     res.send('Bitespeed Identity Reconciliation Service is Live!');
 });
 
-// Sync database - in serverless, we sync on startup (cold start)
-// Note: In production, migrations are preferred, but for this task sync() is used as requested.
-sequelize.sync()
-    .then(() => {
-        console.log('Database synced');
-    })
-    .catch((err) => {
-        console.error('Failed to sync database:', err);
-    });
+// Middleware to ensure DB is synced before handling requests
+let isSynced = false;
+app.use(async (req, res, next) => {
+    if (!isSynced) {
+        try {
+            console.log('Syncing database before request...');
+            await sequelize.sync();
+            isSynced = true;
+            console.log('Database synced successfully');
+        } catch (err) {
+            console.error('Failed to sync database during request:', err);
+            return res.status(500).json({ error: 'Database connection failed' });
+        }
+    }
+    next();
+});
 
 // Vercel handles the listening. Only listen locally or in non-production environments.
-if (process.env.NODE_ENV !== 'production') {
+if (process.env.NODE_ENV !== 'production' && process.env.LOCAL_DEV === 'true') {
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
