@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import sequelize from './models';
 
 dotenv.config();
 
@@ -9,9 +10,17 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 app.get('/', (req, res) => {
-  res.send('Bitespeed Identity Reconciliation Service');
+    res.send('Bitespeed Identity Reconciliation Service');
 });
 
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+// Sync database and start server
+sequelize.sync().then(() => {
+    console.log('Database synced');
+    app.listen(PORT, () => {
+        console.log(`Server is running on port ${PORT}`);
+    });
+}).catch((err) => {
+    console.error('Failed to sync database:', err);
 });
+
+export default app;
