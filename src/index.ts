@@ -16,13 +16,18 @@ app.get('/', (req, res) => {
 });
 
 // Sync database and start server
-sequelize.sync().then(() => {
-    console.log('Database synced');
+sequelize.sync()
+    .then(() => {
+        console.log('Database synced');
+    })
+    .catch((err) => {
+        console.error('Failed to sync database:', err);
+    });
+
+if (process.env.NODE_ENV !== 'production' || process.env.LOCAL_DEV === 'true') {
     app.listen(PORT, () => {
         console.log(`Server is running on port ${PORT}`);
     });
-}).catch((err) => {
-    console.error('Failed to sync database:', err);
-});
+}
 
 export default app;

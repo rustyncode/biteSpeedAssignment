@@ -25,7 +25,7 @@ By tracking primary and secondary contacts, the service ensuring that a business
 ## Setup Instructions
 1. **Clone the repository:**
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/rustyncode/biteSpeedAssignment.git
    ```
 2. **Install dependencies:**
    ```bash
