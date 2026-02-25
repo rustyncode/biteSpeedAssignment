@@ -44,7 +44,9 @@ By tracking primary and secondary contacts, the service ensuring that a business
    ```
 
 ## Hosted Application Link
-[Insert your deployment link here (e.g., Render, Railway, Vercel)]
+```
+ https://bitespeed-back.vercel.app/
+```
 
 ## API Usage
 ### POST `/identify`
