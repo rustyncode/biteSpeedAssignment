@@ -1,5 +1,6 @@
 import express from 'express';
 import dotenv from 'dotenv';
+import 'pg';
 import sequelize from '../src/models';
 import routes from '../src/routes';
 
