@@ -25,7 +25,7 @@ interface ContactAttributes {
     deletedAt: Date | null;
 }
 
-interface ContactCreationAttributes extends Optional<ContactAttributes, 'id' | 'linkedId' | 'deletedAt'> { }
+interface ContactCreationAttributes extends Optional<ContactAttributes, 'id' | 'linkedId' | 'deletedAt' | 'createdAt' | 'updatedAt'> { }
 
 export class Contact extends Model<ContactAttributes, ContactCreationAttributes> implements ContactAttributes {
     public id!: number;
