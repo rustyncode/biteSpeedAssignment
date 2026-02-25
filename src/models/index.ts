@@ -3,12 +3,15 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+import pg from 'pg';
+
 if (!process.env.DATABASE_URL) {
     console.error('CRITICAL: DATABASE_URL environment variable is missing!');
 }
 
 const sequelize = new Sequelize(process.env.DATABASE_URL || '', {
     dialect: 'postgres',
+    dialectModule: pg,
     dialectOptions: {
         ssl: {
             require: true,
