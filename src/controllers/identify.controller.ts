@@ -10,7 +10,9 @@ export const identify = async (req: Request, res: Response) => {
     }
 
     try {
-        // 1. Find all contacts that match either email or phone
+        console.log(`Processing /identify for email: ${email}, phone: ${phoneNumber}`);
+
+        // 1. Find matching contacts
         const matchingContacts = await Contact.findAll({
             where: {
                 [Op.or]: [
@@ -21,7 +23,7 @@ export const identify = async (req: Request, res: Response) => {
         });
 
         if (matchingContacts.length === 0) {
-            // Create new primary contact
+            console.log('No matches. Creating new primary contact.');
             const newContact = await Contact.create({
                 email: email || null,
                 phoneNumber: phoneNumber || null,
@@ -31,95 +33,110 @@ export const identify = async (req: Request, res: Response) => {
 
             return res.status(200).json({
                 contact: {
-                    primaryContatctId: newContact.id,
-                    emails: [newContact.email].filter(Boolean),
-                    phoneNumbers: [newContact.phoneNumber].filter(Boolean),
+                    primaryContatctId: newContact.get('id'),
+                    emails: [newContact.get('email')].filter(Boolean),
+                    phoneNumbers: [newContact.get('phoneNumber')].filter(Boolean),
                     secondaryContactIds: []
                 }
             });
         }
 
-        // 2. Identify the primary contact(s)
-        let primaryContacts = matchingContacts.filter(c => c.linkPrecedence === 'primary');
-        const secondaryContacts = matchingContacts.filter(c => c.linkPrecedence === 'secondary');
+        console.log(`Found ${matchingContacts.length} matching contacts.`);
 
-        // If we found only secondaries, we need to find their primaries
-        if (primaryContacts.length === 0) {
-            const primaryIds = [...new Set(secondaryContacts.map(c => c.linkedId))];
-            primaryContacts = await Contact.findAll({ where: { id: primaryIds as number[] } });
-        } else {
-            // Collect all related primaries (e.g. if a secondary points to a primary not in matchingContacts)
-            const linkedPrimaryIds = [...new Set(secondaryContacts.map(c => c.linkedId))].filter(id => !primaryContacts.find(p => p.id === id));
-            if (linkedPrimaryIds.length > 0) {
-                const extraPrimaries = await Contact.findAll({ where: { id: linkedPrimaryIds as number[] } });
-                primaryContacts = [...primaryContacts, ...extraPrimaries];
+        // 2. Resolve the cluster's primary contacts
+        let primaryContacts: Contact[] = [];
+        const secondaries = matchingContacts.filter(c => c.get('linkPrecedence') === 'secondary');
+        const directPrimaries = matchingContacts.filter(c => c.get('linkPrecedence') === 'primary');
+
+        if (directPrimaries.length > 0) {
+            primaryContacts = [...directPrimaries];
+        }
+
+        // Check if secondaries point to a primary not in matchingContacts
+        const linkedPrimaryIds = [...new Set(secondaries.map(s => s.get('linkedId')))].filter(id => id !== null);
+        for (const pid of linkedPrimaryIds) {
+            if (!primaryContacts.find(p => p.get('id') === pid)) {
+                const p = await Contact.findByPk(pid as number);
+                if (p) primaryContacts.push(p);
             }
         }
 
-        // Sort primaries by age (createdAt)
-        primaryContacts.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-        const mainPrimary = primaryContacts[0];
+        if (primaryContacts.length === 0) {
+            console.error('CRITICAL: No primary contact found for cluster!');
+            return res.status(500).json({ error: 'Database state inconsistency' });
+        }
 
-        // 3. Handle Merging: If multiple primaries exist, convert newer ones to secondary
+        // Sort by age
+        primaryContacts.sort((a, b) => new Date(a.get('createdAt')).getTime() - new Date(b.get('createdAt')).getTime());
+        const mainPrimary = primaryContacts[0]!;
+        const mainPrimaryId = mainPrimary.get('id');
+
+        console.log(`Primary contact for this cluster is ID: ${mainPrimaryId}`);
+
+        // 3. Merging: If multiple primaries exist, demote others
         if (primaryContacts.length > 1) {
+            console.log(`Merging ${primaryContacts.length - 1} other primaries into ID: ${mainPrimaryId}`);
             for (let i = 1; i < primaryContacts.length; i++) {
-                const otherPrimary = primaryContacts[i];
-                await otherPrimary.update({
+                const other = primaryContacts[i];
+                const otherId = other.get('id');
+                if (otherId === mainPrimaryId) continue;
+
+                await other.update({
                     linkPrecedence: 'secondary',
-                    linkedId: mainPrimary.id
+                    linkedId: mainPrimaryId
                 });
-                // Also update any contacts previously linked to this primary
+
+                // Also update any of its existing secondaries
                 await Contact.update(
-                    { linkedId: mainPrimary.id },
-                    { where: { linkedId: otherPrimary.id } }
+                    { linkedId: mainPrimaryId },
+                    { where: { linkedId: otherId } }
                 );
             }
         }
 
-        // 4. Check if we need to create a NEW secondary contact
-        const exactMatch = matchingContacts.some(
-            c => (email ? c.email === email : true) && (phoneNumber ? c.phoneNumber === phoneNumber : true)
-        );
+        // 4. Creation: Check if the current info is new to the cluster
+        const currentEmailExists = matchingContacts.some(c => c.get('email') === email);
+        const currentPhoneExists = matchingContacts.some(c => c.get('phoneNumber') === phoneNumber);
 
-        // If one of the details (email or phone) is provided but not present in the cluster, create secondary
-        const emailExists = matchingContacts.some(c => c.email === email);
-        const phoneExists = matchingContacts.some(c => c.phoneNumber === phoneNumber);
-
-        if ((email && !emailExists) || (phoneNumber && !phoneExists)) {
+        if ((email && !currentEmailExists) || (phoneNumber && !currentPhoneExists)) {
+            console.log('Adding new information as a secondary contact.');
             await Contact.create({
                 email: email || null,
                 phoneNumber: phoneNumber || null,
                 linkPrecedence: 'secondary',
-                linkedId: mainPrimary.id
+                linkedId: mainPrimaryId
             });
         }
 
-        // 5. Build Response
-        const allRelated = await Contact.findAll({
+        // 5. Final Response
+        const finalNodes = await Contact.findAll({
             where: {
                 [Op.or]: [
-                    { id: mainPrimary.id },
-                    { linkedId: mainPrimary.id }
+                    { id: mainPrimaryId },
+                    { linkedId: mainPrimaryId }
                 ]
             }
         });
 
-        const emails = [...new Set(allRelated.map(c => c.email).filter(Boolean))];
-        const phoneNumbers = [...new Set(allRelated.map(c => c.phoneNumber).filter(Boolean))];
-        const secondaryContactIds = allRelated.filter(c => c.linkPrecedence === 'secondary').map(c => c.id);
+        const allEmails = [...new Set(finalNodes.map(c => c.get('email')).filter(Boolean))];
+        const allPhones = [...new Set(finalNodes.map(c => c.get('phoneNumber')).filter(Boolean))];
+        const secondaryIds = finalNodes.filter(c => c.get('linkPrecedence') === 'secondary').map(c => c.get('id'));
 
-        // Ensure primary email/phone come first in the arrays (optional but cleaner)
-        res.status(200).json({
+        // Put primary info first
+        const pEmail = mainPrimary.get('email');
+        const pPhone = mainPrimary.get('phoneNumber');
+
+        return res.status(200).json({
             contact: {
-                primaryContatctId: mainPrimary.id,
-                emails: [mainPrimary.email, ...emails.filter(e => e !== mainPrimary.email)].filter(Boolean),
-                phoneNumbers: [mainPrimary.phoneNumber, ...phoneNumbers.filter(p => p !== mainPrimary.phoneNumber)].filter(Boolean),
-                secondaryContactIds
+                primaryContatctId: mainPrimaryId,
+                emails: [pEmail, ...allEmails.filter(e => e !== pEmail)].filter(Boolean),
+                phoneNumbers: [pPhone, ...allPhones.filter(p => p !== pPhone)].filter(Boolean),
+                secondaryContactIds: secondaryIds
             }
         });
 
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal server error' });
+    } catch (err) {
+        console.error('Error in /identify:', err);
+        return res.status(500).json({ error: 'Internal server error' });
     }
 };
